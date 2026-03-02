@@ -19,6 +19,8 @@ Data is stored locally using an SQLite database. Any and all similarities to ger
 | `/history` | View recent workouts and totals. Can be filtered by activity, and you can check other users' stats. |
 | `/leaderboard` | View the top 10 rankings for Calories, Distance, or Duration. Can be filtered by specific activities. |
 | `/undo` | Made a mistake? Quickly delete your most recently logged workout. |
+| `/setquest` | Set a training goal for the server, e.g. burning 10k calories in 7 days. Everyone participates. |
+| `/quest` | Check current status of the training goal set. See progess, and time remaining. |
 
 ## Prerequisites
 1. **Python 3.8+**
