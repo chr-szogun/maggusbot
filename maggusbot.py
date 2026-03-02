@@ -347,9 +347,28 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
         ''')
         furthest_wo = cursor.fetchone()
 
+
+    # --- 3. Fetch Server Totals ---
+    if activity:
+        cursor.execute('''
+            SELECT SUM(duration_min), SUM(calories_burned), SUM(distance_km)
+            FROM workouts
+            WHERE LOWER(activity) = LOWER(?)
+        ''', (activity,))
+    else:
+        cursor.execute('''
+            SELECT SUM(duration_min), SUM(calories_burned), SUM(distance_km)
+            FROM workouts
+        ''')
+    
+    server_totals = cursor.fetchone()
+    total_duration = server_totals[0] or 0
+    total_calories = server_totals[1] or 0
+    total_distance = server_totals[2] or 0
+
     conn.close()
 
-    # --- 3. Build the Response Embed ---
+    # --- 4. Build the Response Embed ---
     if not rankings:
         await interaction.response.send_message("No data found for this leaderboard!", ephemeral=True)
         return
@@ -377,7 +396,7 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
         
     embed.description = description if description else "No data to show!"
     
-    # --- 4. Add Record Workout Fields ---
+    # --- 5. Add Record Workout Fields ---
     if longest_wo:
         uid, act, dur, cals, ts = longest_wo
         embed.add_field(
@@ -403,6 +422,20 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
                 inline=False
             )
     
+
+    # --- 6. Add Server Grand Totals Field ---
+    # Convert huge minute numbers into hours/minutes for readability!
+    hours = total_duration // 60
+    mins = total_duration % 60
+    dur_str = f"{hours:g}h {mins:g}m" if hours > 0 else f"{total_duration:g} mins"
+
+    embed.add_field(
+        name="🌍 Server Grand Totals", 
+        value=f"**{dur_str}** spent exercising\n**{total_calories:g} kcal** burned\n**{total_distance:g} km** traveled", 
+        inline=False
+    )
+
+
     await interaction.response.send_message(embed=embed)
 # Run the bot
 bot.run(token)
