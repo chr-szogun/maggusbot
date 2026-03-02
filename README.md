@@ -62,5 +62,5 @@ Discord caches slash commands. If you just started the bot and don't see the com
 ## How Calories are Calculated
 This bot uses the **Keytel et al. (2005)** formula for estimating Energy Expenditure (EE). It is widely considered one of the most accurate formulas for heart-rate-based calorie estimation without using a VO2 max mask.
 
-* **Male:** `EE = (-55.0969 + (0.6309 × HR) + (0.1988 × Weight) + (0.2017 × Age)) / 4.184 * duration`
-* **Female:** `EE = (-20.4022 + (0.4472 × HR) - (0.1263 × Weight) + (0.074 × Age)) / 4.184 * duration`
+* **Male:** $EE = \frac{(-55.0969 + (0.6309 × HR) + (0.1988 × Weight) + (0.2017 × Age)) * duration}{4.184} $
+* **Female:** $EE = \frac{(-20.4022 + (0.4472 × HR) - (0.1263 × Weight) + (0.074 × Age))* duration}{4.184} $
