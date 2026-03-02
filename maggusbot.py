@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import sqlite3
 from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 with open("bot_token.txt", "r") as f:
     token = f.readlines()[0]
@@ -22,6 +23,7 @@ def setup_db():
             gender TEXT
         )
     ''')
+
     # Table to store workouts
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS workouts (
@@ -35,6 +37,19 @@ def setup_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Quest
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            metric TEXT,
+            target REAL,
+            start_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            end_timestamp DATETIME,
+            is_active INTEGER DEFAULT 1
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -436,6 +451,146 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
     )
 
 
+
+# setquest
+# set server quest, e.g. calorie goal for a week
+@bot.tree.command(name="setquest", description="Start a new server-wide fitness quest!")
+@app_commands.describe(
+    metric="What are we tracking?",
+    target="The goal number to reach",
+    days="Optional: How many days until the quest expires? (e.g. 7 for a week)"
+)
+@app_commands.choices(metric=[
+    app_commands.Choice(name="Calories Burned", value="calories_burned"),
+    app_commands.Choice(name="Distance (km)", value="distance_km"),
+    app_commands.Choice(name="Duration (mins)", value="duration_min")
+])
+async def set_quest(interaction: discord.Interaction, metric: app_commands.Choice[str], target: float, days: Optional[float] = None):
+    if target <= 0:
+        await interaction.response.send_message("Target must be greater than 0", ephemeral=True)
+        return
+
+    conn = sqlite3.connect('workouts.db')
+    cursor = conn.cursor()
+    
+    # End any currently active quests
+    cursor.execute('UPDATE quests SET is_active = 0 WHERE is_active = 1')
+    
+    # Calculate timestamps (SQLite uses UTC by default)
+    now = datetime.now(timezone.utc)
+    start_str = now.strftime('%Y-%m-%d %H:%M:%S')
+    
+    end_str = None
+    if days:
+        end_time = now + timedelta(days=days)
+        end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Start the new quest
+    cursor.execute('''
+        INSERT INTO quests (metric, target, start_timestamp, is_active, end_timestamp)
+        VALUES (?, ?, ?, 1, ?)
+    ''', (metric.value, target, start_str, end_str))
+    
+    conn.commit()
+    conn.close()
+    
+    unit = "km" if metric.value == "distance_km" else "mins" if metric.value == "duration_min" else "kcal"
+    
+    time_msg = f"⏳ You have **{days:g} days** to complete it!" if days else "♾️ This quest has no time limit!"
+    
+    await interaction.response.send_message(
+        f"! **NEW SERVER QUEST STARTED** !\n"
+        f"Our community goal is **{target:g} {unit}** of {metric.name}.\n"
+        f"{time_msg}\n"
+        f"Log your workouts to contribute. Run `/quest` to check the progress!"
+    )
+
+
+
+# quest
+# fetch current quest status
+@bot.tree.command(name="quest", description="Check the progress of the current server quest")
+async def check_quest(interaction: discord.Interaction):
+    conn = sqlite3.connect('workouts.db')
+    cursor = conn.cursor()
+    
+    # Fetch the active quest
+    cursor.execute('SELECT metric, target, start_timestamp, end_timestamp FROM quests WHERE is_active = 1 LIMIT 1')
+    quest = cursor.fetchone()
+    
+    if not quest:
+        await interaction.response.send_message("❌ There is no active quest right now. Use `/setquest` to start one!", ephemeral=True)
+        conn.close()
+        return
+        
+    metric, target, start_timestamp, end_timestamp = quest
+    
+    # --- Time & Expiration Math ---
+    now = datetime.now(timezone.utc)
+    is_expired = False
+    time_left_str = ""
+    
+    if end_timestamp:
+        # Parse the expiration date from the database
+        end_dt = datetime.strptime(end_timestamp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+        
+        if now > end_dt:
+            is_expired = True
+        else:
+            delta = end_dt - now
+            days_left = delta.days
+            hours_left = delta.seconds // 3600
+            time_left_str = f"⏳ **Time Remaining:** {days_left}d {hours_left}h\n"
+    
+    # --- Calculate Progress ---
+    # If the quest has a time limit, only count workouts logged BEFORE the time limit expired
+    if end_timestamp:
+        cursor.execute(f'''
+            SELECT SUM({metric}) FROM workouts 
+            WHERE timestamp >= ? AND timestamp <= ?
+        ''', (start_timestamp, end_timestamp))
+    else:
+        cursor.execute(f'''
+            SELECT SUM({metric}) FROM workouts 
+            WHERE timestamp >= ?
+        ''', (start_timestamp,))
+        
+    current_total = cursor.fetchone()[0] or 0
+    conn.close()
+    
+    # Formatting text based on what we are tracking
+    unit = "km" if metric == "distance_km" else "mins" if metric == "duration_min" else "kcal"
+    metric_name = "Distance" if metric == "distance_km" else "Duration" if metric == "duration_min" else "Calories Burned"
+    
+    # --- Progress Bar Math ---
+    percent = min(current_total / target, 1.0)
+    length = 15 # How many blocks long the bar is
+    filled = int(length * percent)
+    bar = '▓' * filled + '░' * (length - filled)
+    
+    # --- Build the Embed ---
+    embed = discord.Embed(title="Active Community Quest", color=discord.Color.blue())
+    embed.description = f"**Goal:** Reach **{target:g} {unit}** ({metric_name})\n"
+    embed.description += time_left_str + "\n"
+    
+    if current_total >= target:
+        embed.title = "Community Quest (COMPLETED)"
+        embed.description += f" **QUEST COMPLETE!** \nWe crushed the goal of {target:g} {unit}!\n\n`[{'▓'*length}]` **100%**!"
+        embed.color = discord.Color.gold()
+        
+    elif is_expired:
+        embed.title = "Community Quest (FAILED)"
+        embed.description += f" **TIME IS UP!** \nWe reached {current_total:g} {unit}, but fell short of the {target:g} {unit} goal.\n\n`[{bar}]` **{percent*100:.1f}%**"
+        embed.color = discord.Color.red()
+        
+    else:
+        embed.description += f"**Progress:** {current_total:g} / {target:g} {unit}\n"
+        embed.description += f"`[{bar}]` **{percent*100:.1f}%**\n\n"
+        embed.description += "Keep logging those workouts to help the server reach the goal!"
+        
+    embed.set_footer(text=f"Quest started on {start_timestamp[:10]}")
+    
     await interaction.response.send_message(embed=embed)
+
 # Run the bot
 bot.run(token)
