@@ -3,7 +3,7 @@
 A lightweight Discord bot built with Python and `discord.py` that allows server members to log their workouts, estimate calories burned, track their history, and compete on server-wide leaderboards. 
 Data is stored locally using an SQLite database. Any and all similarities to german bodybuilding legend Markus Rühl is purely coincedental.
 
-##Features
+## Features
 * **Accurate Calorie Tracking**: Uses the scientifically validated Keytel et al. formula to calculate energy expenditure based on Heart Rate, Age, Weight, and Gender.
 * **Modern Slash Commands**: Fully integrates with Discord's native slash command UI for easy input.
 * **Server Leaderboards**: Compete with friends by ranking top calories burned, distance covered, or duration exercised.
@@ -15,7 +15,7 @@ Data is stored locally using an SQLite database. Any and all similarities to ger
 | Command | Description |
 | :--- | :--- |
 | `/init` | Initialize your fitness profile (Age, Weight, Height, Gender). **Required before logging!** |
-| `/logwo` | Log a workout. Requires Activity, Duration, and Avg Heart Rate. Optionally takes Distance (km). |
+| `/logwo` | Log a workout. Requires Activity, Duration, and Avg Heart Rate. Optionally takes Distance (km). Calculates calories burned. |
 | `/history` | View recent workouts and totals. Can be filtered by activity, and you can check other users' stats. |
 | `/leaderboard` | View the top 10 rankings for Calories, Distance, or Duration. Can be filtered by specific activities. |
 | `/undo` | Made a mistake? Quickly delete your most recently logged workout. |
