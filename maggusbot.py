@@ -272,7 +272,7 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
     
     db_metric = metric.value 
     
-    # We group by user_id, sum the chosen metric, and sort descending
+    # --- 1. Fetch Leaderboard Rankings ---
     if activity:
         cursor.execute(f'''
             SELECT user_id, SUM({db_metric}) as total 
@@ -292,8 +292,64 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
         ''')
         
     rankings = cursor.fetchall()
+
+    # --- 2. Fetch Single Record Workouts ---
+    if activity:
+        # Longest single workout for this activity
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, calories_burned, timestamp 
+            FROM workouts 
+            WHERE LOWER(activity) = LOWER(?) 
+            ORDER BY duration_min DESC LIMIT 1
+        ''', (activity,))
+        longest_wo = cursor.fetchone()
+
+        # Highest calories burned in a single workout for this activity
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, calories_burned, timestamp 
+            FROM workouts 
+            WHERE LOWER(activity) = LOWER(?) 
+            ORDER BY calories_burned DESC LIMIT 1
+        ''', (activity,))
+        most_cals_wo = cursor.fetchone()
+
+        # Longest distance covered in a single workout for this activity
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, distance_km, timestamp 
+            FROM workouts 
+            WHERE LOWER(activity) = LOWER(?) AND distance_km IS NOT NULL
+            ORDER BY distance_km DESC LIMIT 1
+        ''', (activity,))
+        furthest_wo = cursor.fetchone()
+    else:
+        # Longest single workout overall
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, calories_burned, timestamp 
+            FROM workouts 
+            ORDER BY duration_min DESC LIMIT 1
+        ''')
+        longest_wo = cursor.fetchone()
+
+        # Highest calories burned in a single workout overall
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, calories_burned, timestamp 
+            FROM workouts 
+            ORDER BY calories_burned DESC LIMIT 1
+        ''')
+        most_cals_wo = cursor.fetchone()
+
+        # Longest distance covered in a single workout overall
+        cursor.execute('''
+            SELECT user_id, activity, duration_min, distance_km, timestamp 
+            FROM workouts 
+            WHERE distance_km IS NOT NULL
+            ORDER BY distance_km DESC LIMIT 1
+        ''')
+        furthest_wo = cursor.fetchone()
+
     conn.close()
 
+    # --- 3. Build the Response Embed ---
     if not rankings:
         await interaction.response.send_message("No data found for this leaderboard!", ephemeral=True)
         return
@@ -301,6 +357,7 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
     title_activity = activity.capitalize() if activity else "All Activities"
     embed = discord.Embed(title=f"🏆 Leaderboard: {metric.name} ({title_activity})", color=discord.Color.gold())
     
+    # Build Top 10 Description
     description = ""
     for i, (uid, total) in enumerate(rankings, 1):
         if total is None or total == 0: 
@@ -316,11 +373,35 @@ async def leaderboard(interaction: discord.Interaction, metric: app_commands.Cho
             
         # Add medals for top 3
         medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"**{i}.**"
-        
-        # Using <@user_id> automatically tags/shows their display name in Discord
         description += f"{medal} <@{uid}> - **{val_str}**\n\n"
         
     embed.description = description if description else "No data to show!"
+    
+    # --- 4. Add Record Workout Fields ---
+    if longest_wo:
+        uid, act, dur, cals, ts = longest_wo
+        embed.add_field(
+            name="Longest Single Workout", 
+            value=f"<@{uid}> did **{act.capitalize()}** for **{dur:g} mins** ({cals:g} kcal) on {ts[:16]}", 
+            inline=False
+        )
+        
+    if most_cals_wo:
+        uid, act, dur, cals, ts = most_cals_wo
+        embed.add_field(
+            name="Most Calories Burned in One Workout", 
+            value=f"<@{uid}> burned **{cals:g} kcal** doing **{act.capitalize()}** ({dur:g} mins) on {ts[:16]}", 
+            inline=False
+        )
+
+    if furthest_wo:
+        uid, act, dur, dist, ts = furthest_wo
+        if dist and dist > 0: # Ensure distance is actually greater than 0
+            embed.add_field(
+                name="Longest Distance Covered in One Workout", 
+                value=f"<@{uid}> covered **{dist:g} km** doing **{act.capitalize()}** ({dur:g} mins) on {ts[:16]}", 
+                inline=False
+            )
     
     await interaction.response.send_message(embed=embed)
 # Run the bot
