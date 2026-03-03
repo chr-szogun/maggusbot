@@ -4,7 +4,7 @@ from discord import app_commands
 import sqlite3
 import os
 import asyncio
-from datetime import datetime, time
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Optional
 
@@ -88,6 +88,16 @@ def setup_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS quests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                metric TEXT,
+                target REAL,
+                start_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                end_timestamp DATETIME,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
         conn.commit()
 
 
@@ -152,6 +162,149 @@ def fetch_history(user_id: int, limit: int, activity: Optional[str]):
         recent_workouts = cursor.fetchall()
 
     return totals, recent_workouts
+
+
+def fetch_last_workout(user_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, activity, duration_min, timestamp
+            FROM workouts
+            WHERE user_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''', (user_id,))
+        return cursor.fetchone()
+
+
+def delete_workout(workout_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM workouts WHERE id = ?', (workout_id,))
+        conn.commit()
+
+
+def fetch_leaderboard_records(activity: Optional[str]):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+
+        if activity:
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, calories_burned, timestamp
+                FROM workouts
+                WHERE LOWER(activity) = LOWER(?)
+                ORDER BY duration_min DESC
+                LIMIT 1
+            ''', (activity,))
+            longest_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, calories_burned, timestamp
+                FROM workouts
+                WHERE LOWER(activity) = LOWER(?)
+                ORDER BY calories_burned DESC
+                LIMIT 1
+            ''', (activity,))
+            most_cals_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, distance_km, timestamp
+                FROM workouts
+                WHERE LOWER(activity) = LOWER(?) AND distance_km IS NOT NULL
+                ORDER BY distance_km DESC
+                LIMIT 1
+            ''', (activity,))
+            furthest_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT SUM(duration_min), SUM(calories_burned), SUM(distance_km)
+                FROM workouts
+                WHERE LOWER(activity) = LOWER(?)
+            ''', (activity,))
+        else:
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, calories_burned, timestamp
+                FROM workouts
+                ORDER BY duration_min DESC
+                LIMIT 1
+            ''')
+            longest_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, calories_burned, timestamp
+                FROM workouts
+                ORDER BY calories_burned DESC
+                LIMIT 1
+            ''')
+            most_cals_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT user_id, activity, duration_min, distance_km, timestamp
+                FROM workouts
+                WHERE distance_km IS NOT NULL
+                ORDER BY distance_km DESC
+                LIMIT 1
+            ''')
+            furthest_wo = cursor.fetchone()
+
+            cursor.execute('''
+                SELECT SUM(duration_min), SUM(calories_burned), SUM(distance_km)
+                FROM workouts
+            ''')
+
+        totals = cursor.fetchone()
+
+    return longest_wo, most_cals_wo, furthest_wo, totals
+
+
+def start_quest(metric: str, target: float, days: Optional[float]):
+    if metric not in LEADERBOARD_METRICS:
+        raise ValueError("Invalid quest metric")
+
+    now = datetime.now(timezone.utc)
+    start_str = now.strftime('%Y-%m-%d %H:%M:%S')
+
+    end_str = None
+    if days is not None:
+        end_time = now + timedelta(days=days)
+        end_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE quests SET is_active = 0 WHERE is_active = 1')
+        cursor.execute('''
+            INSERT INTO quests (metric, target, start_timestamp, is_active, end_timestamp)
+            VALUES (?, ?, ?, 1, ?)
+        ''', (metric, target, start_str, end_str))
+        conn.commit()
+
+
+def fetch_active_quest():
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT metric, target, start_timestamp, end_timestamp FROM quests WHERE is_active = 1 LIMIT 1')
+        return cursor.fetchone()
+
+
+def fetch_quest_progress(metric: str, start_timestamp: str, end_timestamp: Optional[str]):
+    if metric not in LEADERBOARD_METRICS:
+        raise ValueError("Invalid quest metric")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        if end_timestamp:
+            cursor.execute(f'''
+                SELECT SUM({metric})
+                FROM workouts
+                WHERE timestamp >= ? AND timestamp <= ?
+            ''', (start_timestamp, end_timestamp))
+        else:
+            cursor.execute(f'''
+                SELECT SUM({metric})
+                FROM workouts
+                WHERE timestamp >= ?
+            ''', (start_timestamp,))
+        return cursor.fetchone()[0] or 0
 
 
 def fetch_leaderboard(metric: str, activity: Optional[str]):
@@ -372,6 +525,24 @@ async def log_workout(
 
     await interaction.response.send_message(embed=embed)
 
+
+@bot.tree.command(name="undo", description="Entferne dein zuletzt eingetragenes Workout")
+async def undo_workout(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    last_workout = await asyncio.to_thread(fetch_last_workout, user_id)
+
+    if not last_workout:
+        await interaction.response.send_message("Du hast keine Workouts zum Entfernen.", ephemeral=True)
+        return
+
+    workout_id, activity, duration, timestamp = last_workout
+    await asyncio.to_thread(delete_workout, workout_id)
+
+    await interaction.response.send_message(
+        f"Letztes Workout entfernt: **{activity.capitalize()}** ({duration:g} min) von {timestamp[:16]}.",
+        ephemeral=True,
+    )
+
 @bot.tree.command(name="verlauf", description="Zeige letzte Workouts und Gesamtwerte")
 @app_commands.describe(
     nutzer="Stats von jemand anderem anzeigen (leer = du)",
@@ -441,6 +612,7 @@ async def leaderboard(
         return
 
     rankings = await asyncio.to_thread(fetch_leaderboard, db_metric, aktivitaet)
+    longest_wo, most_cals_wo, furthest_wo, server_totals = await asyncio.to_thread(fetch_leaderboard_records, aktivitaet)
 
     if not rankings:
         await interaction.response.send_message("Keine Daten fuer diese Rangliste gefunden!", ephemeral=True)
@@ -452,6 +624,150 @@ async def leaderboard(
     description = await build_leaderboard_description(bot, rankings, db_metric, interaction.guild)
     embed.description = description if description else "Keine Daten zum Anzeigen!"
 
+    if longest_wo:
+        uid, act, dur, cals, ts = longest_wo
+        user_label = await resolve_user_display(bot, uid, interaction.guild)
+        embed.add_field(
+            name="Laengstes Einzel-Workout",
+            value=f"{user_label}: **{act.capitalize()}** fuer **{dur:g} min** ({cals:g} kcal) am {ts[:16]}",
+            inline=False,
+        )
+
+    if most_cals_wo:
+        uid, act, dur, cals, ts = most_cals_wo
+        user_label = await resolve_user_display(bot, uid, interaction.guild)
+        embed.add_field(
+            name="Meiste Kalorien in einem Workout",
+            value=f"{user_label}: **{cals:g} kcal** bei **{act.capitalize()}** ({dur:g} min) am {ts[:16]}",
+            inline=False,
+        )
+
+    if furthest_wo:
+        uid, act, dur, dist, ts = furthest_wo
+        if dist and dist > 0:
+            user_label = await resolve_user_display(bot, uid, interaction.guild)
+            embed.add_field(
+                name="Weiteste Distanz in einem Workout",
+                value=f"{user_label}: **{dist:g} km** bei **{act.capitalize()}** ({dur:g} min) am {ts[:16]}",
+                inline=False,
+            )
+
+    total_duration = (server_totals[0] or 0) if server_totals else 0
+    total_calories = (server_totals[1] or 0) if server_totals else 0
+    total_distance = (server_totals[2] or 0) if server_totals else 0
+
+    hours = int(total_duration // 60)
+    minutes = total_duration % 60
+    duration_str = f"{hours}h {minutes:g}m" if hours > 0 else f"{total_duration:g} min"
+
+    embed.add_field(
+        name="Server-Gesamtwerte",
+        value=f"**{duration_str}** Training\n**{total_calories:g} kcal** verbrannt\n**{total_distance:g} km** zurueckgelegt",
+        inline=False,
+    )
+
     await interaction.response.send_message(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+
+@bot.tree.command(name="setquest", description="Starte eine serverweite Quest")
+@app_commands.describe(
+    kennzahl="Welche Kennzahl soll verfolgt werden?",
+    ziel="Welcher Zielwert soll erreicht werden?",
+    tage="Optional: Wie viele Tage soll die Quest laufen?",
+)
+@app_commands.choices(kennzahl=[
+    app_commands.Choice(name="Verbrannte Kalorien", value="calories_burned"),
+    app_commands.Choice(name="Distanz (km)", value="distance_km"),
+    app_commands.Choice(name="Dauer (min)", value="duration_min"),
+])
+async def set_quest(
+    interaction: discord.Interaction,
+    kennzahl: app_commands.Choice[str],
+    ziel: float,
+    tage: Optional[app_commands.Range[float, 0.1, 365]] = None,
+):
+    if ziel <= 0:
+        await interaction.response.send_message("Zielwert muss groesser als 0 sein.", ephemeral=True)
+        return
+
+    await asyncio.to_thread(start_quest, kennzahl.value, ziel, tage)
+
+    unit = LEADERBOARD_METRICS[kennzahl.value]
+    time_msg = f"⏳ Zeitlimit: **{tage:g} Tage**" if tage else "♾️ Kein Zeitlimit"
+
+    await interaction.response.send_message(
+        f"Neue Quest gestartet!\n"
+        f"Ziel: **{ziel:g} {unit}** in **{kennzahl.name}**\n"
+        f"{time_msg}\n"
+        f"Nutze `/quest`, um den Fortschritt zu sehen.",
+    )
+
+
+@bot.tree.command(name="quest", description="Zeige den Fortschritt der aktuellen Quest")
+async def check_quest(interaction: discord.Interaction):
+    active_quest = await asyncio.to_thread(fetch_active_quest)
+
+    if not active_quest:
+        await interaction.response.send_message("Keine aktive Quest. Starte eine mit `/setquest`.", ephemeral=True)
+        return
+
+    metric, target, start_timestamp, end_timestamp = active_quest
+    if metric not in LEADERBOARD_METRICS:
+        await interaction.response.send_message("Die gespeicherte Quest ist ungueltig.", ephemeral=True)
+        return
+
+    now = datetime.now(timezone.utc)
+    is_expired = False
+    time_left_str = ""
+
+    if end_timestamp:
+        end_dt = datetime.strptime(end_timestamp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+        if now > end_dt:
+            is_expired = True
+        else:
+            delta = end_dt - now
+            days_left = delta.days
+            hours_left = delta.seconds // 3600
+            time_left_str = f"Restzeit: {days_left}d {hours_left}h"
+
+    current_total = await asyncio.to_thread(fetch_quest_progress, metric, start_timestamp, end_timestamp)
+    progress = min(current_total / target, 1.0)
+    bar_len = 15
+    filled = int(bar_len * progress)
+    bar = "=" * filled + "-" * (bar_len - filled)
+
+    unit = LEADERBOARD_METRICS[metric]
+    metric_name = {
+        "calories_burned": "Kalorien",
+        "distance_km": "Distanz",
+        "duration_min": "Dauer",
+    }[metric]
+
+    embed = discord.Embed(title="Aktive Community-Quest", color=discord.Color.blue())
+    embed.description = f"**Ziel:** {target:g} {unit} ({metric_name})\n"
+
+    if time_left_str:
+        embed.description += f"{time_left_str}\n"
+
+    if current_total >= target:
+        embed.title = "Community-Quest (ERFUELLT)"
+        embed.color = discord.Color.gold()
+        embed.description += f"\nGeschafft!\n`[{('=' * bar_len)}]` **100%**"
+    elif is_expired:
+        embed.title = "Community-Quest (ABGELAUFEN)"
+        embed.color = discord.Color.red()
+        embed.description += (
+            f"\nZeit abgelaufen.\n"
+            f"Erreicht: {current_total:g} / {target:g} {unit}\n"
+            f"`[{bar}]` **{progress * 100:.1f}%**"
+        )
+    else:
+        embed.description += (
+            f"\nFortschritt: {current_total:g} / {target:g} {unit}\n"
+            f"`[{bar}]` **{progress * 100:.1f}%**"
+        )
+
+    embed.set_footer(text=f"Gestartet am {start_timestamp[:10]}")
+    await interaction.response.send_message(embed=embed)
 # Run the bot
 bot.run(token)
