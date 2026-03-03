@@ -684,7 +684,7 @@ async def set_quest(
     interaction: discord.Interaction,
     kennzahl: app_commands.Choice[str],
     ziel: float,
-    tage: Optional[app_commands.Range[float, 0.1, 365]] = None,
+    tage: Optional[app_commands.Range[float, 0.1, 365.0]] = None,
 ):
     if ziel <= 0:
         await interaction.response.send_message("Zielwert muss groesser als 0 sein.", ephemeral=True)
