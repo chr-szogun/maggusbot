@@ -18,6 +18,7 @@ It stores data in SQLite, supports German slash commands, and includes leaderboa
 
 | Command | Description |
 | :--- | :--- |
+| `/hilfe` | Shows an overview of all available slash commands. |
 | `/profil` | Creates/updates your fitness profile. Required before workout logging. |
 | `/eintrag` | Logs a workout and calculates calories. |
 | `/undo` | Removes your most recent workout entry. |

@@ -457,6 +457,23 @@ bot = WorkoutBot()
 
 # --- COMMANDS ---
 
+@bot.tree.command(name="hilfe", description="Zeige eine Uebersicht aller Slash-Commands")
+async def help_overview(interaction: discord.Interaction):
+    slash_commands = sorted(
+        (cmd for cmd in bot.tree.get_commands() if isinstance(cmd, app_commands.Command)),
+        key=lambda cmd: cmd.name,
+    )
+    lines = [f"`/{cmd.name}` - {cmd.description or 'Keine Beschreibung'}" for cmd in slash_commands]
+
+    embed = discord.Embed(
+        title="Hilfe - Slash-Commands",
+        description="\n".join(lines),
+        color=discord.Color.blurple(),
+    )
+    embed.set_footer(text="Tipp: Tippe / und waehle einen Command aus")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.tree.command(name="profil", description="Initialisiere dein Fitnessprofil")
 @app_commands.describe(
     alter="Alter in Jahren",
