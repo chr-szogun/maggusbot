@@ -1,68 +1,100 @@
-# Discord Workout Tracker Bot
+# Maggusbot (Discord Workout Tracker)
 
-A lightweight Discord bot built with Python and `discord.py` that allows server members to log their workouts, estimate calories burned, track their history, and compete on server-wide leaderboards. 
-Data is stored locally using an SQLite database. Any and all similarities to german bodybuilding legend Markus Rühl is purely coincedental.
+Maggusbot is a Discord bot built with Python and `discord.py` for tracking workouts on a server.
+It stores data in SQLite, supports German slash commands, and includes leaderboard + quest features.
 
 ## Features
-* **Accurate Calorie Tracking**: Uses the scientifically validated Keytel et al. formula to calculate energy expenditure based on Heart Rate, Age, Weight, and Gender.
-* **Modern Slash Commands**: Fully integrates with Discord's native slash command UI for easy input.
-* **Server Leaderboards**: Compete with friends by ranking top calories burned, distance covered, or duration exercised.
-* **Filterable History**: View your own or others' past workouts, filtered by specific activities.
-* **Local Storage**: Uses a lightweight `workouts.db` SQLite file. No database servers required!
 
-## Available Commands
+- Workout logging with calorie estimation (Keytel et al. formula)
+- User fitness profiles (age, weight, height, gender)
+- History and activity filters per user
+- Leaderboards by calories, distance, or duration
+- Daily automatic leaderboard post to a configured channel
+- Undo of the most recently logged workout
+- Server quests (`/setquest`, `/quest`) with optional time limit
+- Environment-based configuration (`.env`) for token, sync behavior, DB path, and scheduling
+
+## Slash Commands (German)
 
 | Command | Description |
 | :--- | :--- |
-| `/init` | Initialize your fitness profile (Age, Weight, Height, Gender). **Required before logging!** |
-| `/logwo` | Log a workout. Requires Activity, Duration, and Avg Heart Rate. Optionally takes Distance (km). Calculates calories burned. |
-| `/history` | View recent workouts and totals. Can be filtered by activity, and you can check other users' stats. |
-| `/leaderboard` | View the top 10 rankings for Calories, Distance, or Duration. Can be filtered by specific activities. |
-| `/undo` | Made a mistake? Quickly delete your most recently logged workout. |
-| `/setquest` | Set a training goal for the server, e.g. burning 10k calories in 7 days. Everyone participates. |
-| `/quest` | Check current status of the training goal set. See progess, and time remaining. |
+| `/profil` | Creates/updates your fitness profile. Required before workout logging. |
+| `/eintrag` | Logs a workout and calculates calories. |
+| `/undo` | Removes your most recent workout entry. |
+| `/verlauf` | Shows workout history and totals (optionally filtered). |
+| `/rangliste` | Shows leaderboard for calories, distance, or duration. |
+| `/setquest` | Starts a server-wide quest with goal and optional duration. |
+| `/quest` | Shows current quest progress and status. |
 
-## Prerequisites
-1. **Python 3.8+**
-2. A Discord Bot Token (Get one from the [Discord Developer Portal](https://discord.com/developers/applications)).
-3. The `discord.py` library.
+## Requirements
 
-## Installation & Setup
+- Python 3.9+
+- A Discord bot application/token
+- `discord.py`
 
-**1. Clone or download this repository**
-Ensure `bot.py` is in your working directory.
+Install dependency:
 
-**2. Install dependencies**
-Open your terminal or command prompt and run:
 ```bash
 pip install discord.py
 ```
 
-**3. Configure the Bot**
-Open `bot.py` in your code editor and update the following placeholders:
-* Find `self.MY_GUILD = discord.Object(id=YOUR_SERVER_ID)` and replace `YOUR_SERVER_ID` with your actual Discord Server ID. *(To get this: User Settings > Advanced > Turn on Developer Mode, then right-click your server icon and click "Copy Server ID".)*
-* Find `bot.run('YOUR_BOT_TOKEN_HERE')` at the very bottom and paste your secret Bot Token.
+## Configuration (.env)
 
-**4. Invite the Bot to your Server**
-In the Discord Developer portal, go to **OAuth2 > URL Generator**. 
-Select the `bot` and `applications.commands` scopes. Give it basic text permissions (Send Messages, Embed Links). Copy the generated URL, paste it into your browser, and invite the bot to your server.
+Create a `.env` file in the project root.
 
-**5. Run the Bot**
-```bash
-python bot.py
+```env
+DISCORD_BOT_TOKEN=your_bot_token_here
+
+# Optional
+WORKOUTS_DB_PATH=workouts.db
+DISCORD_SYNC_COMMANDS=true
+DISCORD_SYNC_GUILD_ID=123456789012345678
+LEADERBOARD_CHANNEL_ID=123456789012345678
+BOT_TIMEZONE=Europe/Zurich
+LEADERBOARD_POST_HOUR=7
+LEADERBOARD_POST_MINUTE=0
 ```
-You should see a message in your console saying the bot is ready and commands are synced!
 
-## Troubleshooting
+### Environment Variables
 
-**I don't see the Slash Commands in my server!**
-Discord caches slash commands. If you just started the bot and don't see the commands:
-* **If on desktop:** Press `Ctrl + R` (or `Cmd + R`) to force refresh Discord.
-* **If on browser:** Press `F5` to refresh the webpage. 
-* Ensure you properly replaced `YOUR_SERVER_ID` in the code, which tells Discord to sync the commands to your testing server instantly.
+| Variable | Required | Default | Purpose |
+| :--- | :---: | :--- | :--- |
+| `DISCORD_BOT_TOKEN` | yes | - | Bot token used by `bot.run(...)`. |
+| `WORKOUTS_DB_PATH` | no | `workouts.db` | SQLite database path. |
+| `DISCORD_SYNC_COMMANDS` | no | `false` | Enable slash-command sync on startup. |
+| `DISCORD_SYNC_GUILD_ID` | no | unset | If set, sync commands to one guild for faster updates. |
+| `LEADERBOARD_CHANNEL_ID` | no | unset | Enables daily leaderboard autopost in this channel. |
+| `BOT_TIMEZONE` | no | `Europe/Zurich` | Timezone for scheduled daily leaderboard post. |
+| `LEADERBOARD_POST_HOUR` | no | `7` | Posting hour (0-23). |
+| `LEADERBOARD_POST_MINUTE` | no | `0` | Posting minute (0-59). |
 
-## How Calories are Calculated
-This bot uses the **Keytel et al. (2005)** formula for estimating Energy Expenditure (EE). It is widely considered one of the most accurate formulas for heart-rate-based calorie estimation without using a VO2 max mask.
+## Run
 
-* **Male:** $EE = \frac{(-55.0969 + (0.6309 × HR) + (0.1988 × Weight) + (0.2017 × Age)) * duration}{4.184} $
-* **Female:** $EE = \frac{(-20.4022 + (0.4472 × HR) - (0.1263 × Weight) + (0.074 × Age))* duration}{4.184} $
+```bash
+python maggusbot.py
+```
+
+If command syncing is enabled, startup output will show sync status.
+If leaderboard autopost is enabled, startup output will show schedule + timezone.
+
+## Bot Invite
+
+In Discord Developer Portal -> OAuth2 -> URL Generator:
+
+- Scopes: `bot`, `applications.commands`
+- Typical permissions: Send Messages, Embed Links, Read Message History
+
+Then open the generated URL and invite the bot to your server.
+
+## Notes
+
+- Data is stored locally in SQLite.
+- `quests` table is created automatically on startup.
+- The bot reads `.env` automatically; no hardcoded token file is required.
+
+## Calorie Formula
+
+Based on Keytel et al. (2005):
+
+- Male: `((-55.0969 + 0.6309*HR + 0.1988*Weight + 0.2017*Age) / 4.184) * Duration`
+- Female: `((-20.4022 + 0.4472*HR - 0.1263*Weight + 0.074*Age) / 4.184) * Duration`
