@@ -7,10 +7,11 @@ It stores data in SQLite, supports German slash commands, and includes leaderboa
 
 - Workout logging with calorie estimation (Keytel et al. formula)
 - User fitness profiles (age, weight, height, gender)
-- History and activity filters per user
+- Private history and activity filters per user
 - Leaderboards by calories, distance, or duration
 - Daily automatic leaderboard post to a configured channel
 - Undo of the most recently logged workout
+- Deletion of a specific workout entry by ID
 - Server quests (`/setquest`, `/quest`) with optional time limit
 - Environment-based configuration (`.env`) for token, sync behavior, DB path, and scheduling
 
@@ -18,14 +19,15 @@ It stores data in SQLite, supports German slash commands, and includes leaderboa
 
 | Command | Description |
 | :--- | :--- |
-| `/hilfe` | Shows an overview of all available slash commands. |
-| `/profil` | Creates/updates your fitness profile. Required before workout logging. |
-| `/eintrag` | Logs a workout and calculates calories. |
-| `/undo` | Removes your most recent workout entry. |
-| `/verlauf` | Shows workout history and totals (optionally filtered). |
-| `/rangliste` | Shows leaderboard for calories, distance, or duration. |
-| `/setquest` | Starts a server-wide quest with goal and optional duration. |
-| `/quest` | Shows current quest progress and status. |
+| `/hilfe` | Zeigt eine Uebersicht aller verfuegbaren Slash-Commands. |
+| `/profil` | Erstellt oder aktualisiert dein Fitnessprofil. Vor dem ersten Workout-Eintrag erforderlich. |
+| `/eintrag` | Traegt ein Workout ein und berechnet die Kalorien. |
+| `/undo` | Entfernt dein zuletzt eingetragenes Workout. |
+| `/loeschen` | Entfernt einen bestimmten Workout-Eintrag per ID aus `/verlauf`. |
+| `/verlauf` | Zeigt nur deinen eigenen Verlauf und deine Gesamtwerte, optional nach Aktivitaet gefiltert. |
+| `/rangliste` | Zeigt die Rangliste nach Kalorien, Distanz oder Dauer. |
+| `/setquest` | Startet eine serverweite Quest mit Zielwert und optionaler Laufzeit. |
+| `/quest` | Zeigt den aktuellen Fortschritt der aktiven Quest. |
 
 ## Requirements
 
@@ -92,6 +94,7 @@ Then open the generated URL and invite the bot to your server.
 - Data is stored locally in SQLite.
 - `quests` table is created automatically on startup.
 - The bot reads `.env` automatically; no hardcoded token file is required.
+- `/verlauf` replies ephemerally and includes entry IDs so users can delete a specific workout with `/loeschen`.
 
 ## Calorie Formula
 

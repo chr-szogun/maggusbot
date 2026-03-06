@@ -142,7 +142,7 @@ def fetch_history(user_id: int, limit: int, activity: Optional[str]):
             totals = cursor.fetchone()
 
             cursor.execute('''
-                SELECT activity, duration_min, avg_hr, calories_burned, timestamp, distance_km
+                SELECT id, activity, duration_min, avg_hr, calories_burned, timestamp, distance_km
                 FROM workouts WHERE user_id = ? AND LOWER(activity) = LOWER(?)
                 ORDER BY timestamp DESC LIMIT ?
             ''', (user_id, activity, limit))
@@ -154,7 +154,7 @@ def fetch_history(user_id: int, limit: int, activity: Optional[str]):
             totals = cursor.fetchone()
 
             cursor.execute('''
-                SELECT activity, duration_min, avg_hr, calories_burned, timestamp, distance_km
+                SELECT id, activity, duration_min, avg_hr, calories_burned, timestamp, distance_km
                 FROM workouts WHERE user_id = ?
                 ORDER BY timestamp DESC LIMIT ?
             ''', (user_id, limit))
@@ -182,6 +182,18 @@ def delete_workout(workout_id: int):
         cursor = conn.cursor()
         cursor.execute('DELETE FROM workouts WHERE id = ?', (workout_id,))
         conn.commit()
+
+
+def fetch_workout_by_id(user_id: int, workout_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, activity, duration_min, timestamp
+            FROM workouts
+            WHERE id = ? AND user_id = ?
+            LIMIT 1
+        ''', (workout_id, user_id))
+        return cursor.fetchone()
 
 
 def fetch_leaderboard_records(activity: Optional[str]):
@@ -560,20 +572,43 @@ async def undo_workout(interaction: discord.Interaction):
         ephemeral=True,
     )
 
+
+@bot.tree.command(name="loeschen", description="Entferne einen bestimmten Workout-Eintrag per ID")
+@app_commands.describe(workout_id="ID des Eintrags aus /verlauf")
+async def delete_workout_entry(
+    interaction: discord.Interaction,
+    workout_id: int,
+):
+    user_id = interaction.user.id
+    workout = await asyncio.to_thread(fetch_workout_by_id, user_id, workout_id)
+
+    if not workout:
+        await interaction.response.send_message(
+            "Ich finde keinen Eintrag mit dieser ID in deinem Verlauf.",
+            ephemeral=True,
+        )
+        return
+
+    _, activity, duration, timestamp = workout
+    await asyncio.to_thread(delete_workout, workout_id)
+
+    await interaction.response.send_message(
+        f"Eintrag geloescht: **{activity.capitalize()}** ({duration:g} min) von {timestamp[:16]} [ID {workout_id}].",
+        ephemeral=True,
+    )
+
+
 @bot.tree.command(name="verlauf", description="Zeige letzte Workouts und Gesamtwerte")
 @app_commands.describe(
-    nutzer="Stats von jemand anderem anzeigen (leer = du)",
     anzahl="Anzahl der letzten Workouts",
     aktivitaet="Nach Aktivitaet filtern"
 )
 async def workout_history(
     interaction: discord.Interaction,
-    nutzer: Optional[discord.Member] = None,
     anzahl: app_commands.Range[int, 1, 25] = 5,
     aktivitaet: Optional[str] = None,
 ):
-    # Determine whose stats we are looking at
-    user = nutzer or interaction.user
+    user = interaction.user
     user_id = user.id
     
     totals, recent_workouts = await asyncio.to_thread(fetch_history, user_id, anzahl, aktivitaet)
@@ -597,15 +632,15 @@ async def workout_history(
     embed.add_field(name="\u200b", value=f"**Letzte {min(anzahl, total_count)} Workouts:**", inline=False)
     
     for wo in recent_workouts:
-        act, duration, hr, cals, ts, dist = wo
+        workout_id, act, duration, hr, cals, ts, dist = wo
         dist_str = f" | {dist:g} km" if dist is not None else ""
         embed.add_field(
-            name=f"{act.capitalize()} am {ts[:16]}", 
+            name=f"#{workout_id} - {act.capitalize()} am {ts[:16]}", 
             value=f"{duration:g} min{dist_str} | {hr} bpm | {cals:g} kcal", 
             inline=False
         )
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="rangliste", description="Zeige die Top-Rangliste fuer Workouts")
