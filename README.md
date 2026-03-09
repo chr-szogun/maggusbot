@@ -7,6 +7,7 @@ It stores data in SQLite, supports German slash commands, and includes leaderboa
 
 - Workout logging with calorie estimation (Keytel et al. formula)
 - User fitness profiles (age, weight, height, gender)
+- Standalone weight updates via `/gewicht`
 - Private history and activity filters per user
 - Leaderboards by calories, distance, or duration
 - Daily automatic leaderboard post to a configured channel
@@ -21,6 +22,7 @@ It stores data in SQLite, supports German slash commands, and includes leaderboa
 | :--- | :--- |
 | `/hilfe` | Zeigt eine Uebersicht aller verfuegbaren Slash-Commands. |
 | `/profil` | Erstellt oder aktualisiert dein Fitnessprofil. Vor dem ersten Workout-Eintrag erforderlich. |
+| `/gewicht` | Aktualisiert nur dein Gewicht, ohne das komplette Profil neu einzugeben. |
 | `/eintrag` | Traegt ein Workout ein und berechnet die Kalorien. |
 | `/undo` | Entfernt dein zuletzt eingetragenes Workout. |
 | `/loeschen` | Entfernt einen bestimmten Workout-Eintrag per ID aus `/verlauf`. |
@@ -94,6 +96,7 @@ Then open the generated URL and invite the bot to your server.
 - Data is stored locally in SQLite.
 - `quests` table is created automatically on startup.
 - The bot reads `.env` automatically; no hardcoded token file is required.
+- `/gewicht` requires an existing profile and updates only the stored `weight_kg` value.
 - `/verlauf` replies ephemerally and includes entry IDs so users can delete a specific workout with `/loeschen`.
 
 ## Calorie Formula

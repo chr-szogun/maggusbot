@@ -113,6 +113,14 @@ def save_profile(user_id: int, age: int, weight: float, height: float, gender: s
         conn.commit()
 
 
+def update_user_weight(user_id: int, weight: float) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET weight_kg = ? WHERE user_id = ?', (weight, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def fetch_user_profile(user_id: int):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -509,6 +517,28 @@ async def init_profile(
     
     await interaction.response.send_message(
         f"Profil fuer **{interaction.user.display_name}** gespeichert: {alter} Jahre, {gewicht} kg, {groesse} cm, {geschlecht.name}."
+    )
+
+
+@bot.tree.command(name="gewicht", description="Aktualisiere nur dein Gewicht")
+@app_commands.describe(gewicht="Neues Gewicht in kg")
+async def update_weight(
+    interaction: discord.Interaction,
+    gewicht: app_commands.Range[float, 30, 350],
+):
+    user_id = interaction.user.id
+    updated = await asyncio.to_thread(update_user_weight, user_id, gewicht)
+
+    if not updated:
+        await interaction.response.send_message(
+            "❌ Ich finde noch kein Profil fuer dich. Fuehre zuerst `/profil` aus.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.send_message(
+        f"Gewicht fuer **{interaction.user.display_name}** auf **{gewicht} kg** aktualisiert.",
+        ephemeral=True,
     )
 
 @bot.tree.command(name="eintrag", description="Trage ein Workout ein und berechne Kalorien")
